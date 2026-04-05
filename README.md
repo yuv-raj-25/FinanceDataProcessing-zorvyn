@@ -33,9 +33,19 @@ Input is strictly guarded to prevent malformed data from reaching the database.
 - **Approach**: Adopted **Zod**, a modern TS-first schema validation library. Every request traverses `validate.middleware.ts` before hitting the controller.
 - **Benefit**: Invalid UUIDs, poor dates, and negative amounts are caught immediately. Errors are universally formatted using a standardized `ApiError` utility, delivering `HTTP 422` with a mapped list of specific field failures.
 
-### 6. Data Persistence
+### 6. Data Persistence & Modeling
 - **Approach**: Chosen stack is a **Relational Database (PostgreSQL)**. Financial entries mandate rigorous schema consistency, reliable ACID transactions, and robust relational linking between users and ledgers (`ON DELETE CASCADE`).
-- **Initialization**: Database migrations are handled programmatically. When the index script boots server-side, it scans `src/db/migrations/` and processes the `.sql` schema sequentially.
+- **Data Modeling & Integrity**:
+  - Adopted strictly enforced **CHECK constraints** to guarantee data corruption is mathematically impossible at the database level (e.g., `amount > 0` and `type IN ('income', 'expense')`). 
+- **High-Performance Indexing**: 
+  - Standardized **B-Tree Composite Indexes** were applied to support massive analytical queries efficiently.
+  - Index `(user_id, date DESC)` allows fast loading of recent history per user.
+  - Index `(user_id, category)` facilitates highly optimized aggregation scans for the dashboard's category breakdown summaries. 
+- **Initialization**: Database migrations are handled programmatically and idempotently. When the index script boots server-side, it scans `src/db/migrations/` and processes the `.sql` schema sequentially (`001_...` then `002_...`).
+
+### 7. Optional Enhancements
+- **Token-based Authentication (JWT)**: Fully implemented JSON Web Tokens (`jsonwebtoken`) for decentralized authentication. 
+- **Pagination & Search**: The `GET /api/records` endpoint supports robust keyword-based text searching (using Postgres `ILIKE`) alongside comprehensive offset/limit pagination payloads mapping directly to the response metadata array.
 
 ---
 
