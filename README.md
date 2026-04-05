@@ -46,6 +46,8 @@ Input is strictly guarded to prevent malformed data from reaching the database.
 ### 7. Optional Enhancements
 - **Token-based Authentication (JWT)**: Fully implemented JSON Web Tokens (`jsonwebtoken`) for decentralized authentication. 
 - **Pagination & Search**: The `GET /api/records` endpoint supports robust keyword-based text searching (using Postgres `ILIKE`) alongside comprehensive offset/limit pagination payloads mapping directly to the response metadata array.
+- **Rate Limiting**: Integrated `express-rate-limit` as a global application boundary. It mathematically bounds inbound traffic, strictly allowing `100 requests per 15 minutes` window per IP location. Requests breaching this logic return an automated `429 Too Many Requests` API Error.
+- **Soft Delete Functionality**: Erased historical destruction mapping! When `DELETE /api/records/:id` is triggered, the row is effectively vaulted internally via a `deleted_at` timestamp. Global backend read operations (including raw Dashboard metric aggregates) inherently isolate and mathematically filter out vaulted rows cleanly without breaking core tracking logs.
 
 ---
 
