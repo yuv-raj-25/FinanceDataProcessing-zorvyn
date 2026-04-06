@@ -27,9 +27,33 @@ async function runMigrations() {
 
 async function startServer() {
   await runMigrations();
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
+
+  const shutdown = async (signal: string) => {
+    console.log(`\n${signal} signal received: closing HTTP server...`);
+    server.close(async () => {
+      console.log('HTTP server closed.');
+      try {
+        await pool.end();
+        console.log('Database pool closed.');
+        process.exit(0);
+      } catch (err) {
+        console.error('Error during database teardown', err);
+        process.exit(1);
+      }
+    });
+
+    // Force shutdown after 10 seconds
+    setTimeout(() => {
+      console.error('Could not close connections in time, forcefully shutting down');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();
