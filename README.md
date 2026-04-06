@@ -48,6 +48,7 @@ Input is strictly guarded to prevent malformed data from reaching the database.
 - **Pagination & Search**: The `GET /api/records` endpoint supports robust keyword-based text searching (using Postgres `ILIKE`) alongside comprehensive offset/limit pagination payloads mapping directly to the response metadata array.
 - **Rate Limiting**: Integrated `express-rate-limit` as a global application boundary. It mathematically bounds inbound traffic, strictly allowing `100 requests per 15 minutes` window per IP location. Requests breaching this logic return an automated `429 Too Many Requests` API Error.
 - **Soft Delete Functionality**: Erased historical destruction mapping! When `DELETE /api/records/:id` is triggered, the row is effectively vaulted internally via a `deleted_at` timestamp. Global backend read operations (including raw Dashboard metric aggregates) inherently isolate and mathematically filter out vaulted rows cleanly without breaking core tracking logs.
+- **Production-Ready Observability & Security**: Implemented a deep DB Health Check (`/health`), unique Request Correlation logging (`X-Request-Id`), automated Graceful Shutdown hooks, and `helmet` for strict HTTP security headers.
 
 ---
 
@@ -87,3 +88,45 @@ Upon startup, the server automatically reads `src/db/migrations/001_initial_sche
 ✅ All database migrations applied successfully.
 Server running on port 5000
 ```
+
+---
+
+## API Explanation
+
+Here is a rapid breakdown of the primary endpoints the system exposes:
+
+- **System & Observability**
+  - `GET /health`: Deep database health check returning system connectivity details and latency.
+- **Authentication (`/api/auth`)**
+  - `POST /login`: Accepts email/password and returns a signed JWT.
+- **Records (`/api/records`)**
+  - `GET /`: Retrieve paginated records (Supports queries: `page`, `limit`, `type`, `category`, `search`, `startDate`, `endDate`).
+  - `POST /`: Create a new financial record.
+  - `GET /:id`: Fetch a specific record.
+  - `PUT /:id`: Update an existing record.
+  - `DELETE /:id`: Soft-delete a record.
+- **Dashboard (`/api/dashboard`)**
+  - `GET /summary`: Core metrics (Total Income, Total Expense, Balance).
+  - `GET /category-totals`: Breakdown of expenses/incomes by category.
+  - `GET /recent`: Fetches 5 most recent activities.
+
+---
+
+## Assumptions Made
+
+During the architectural design, a few assumptions were mapped:
+- **Currency Storage**: Stored as `DECIMAL(10,2)` in PostgreSQL to guarantee exact mathematical tracking, assuming standard minimal two-decimal fiat precision.
+- **Stateless Authentication**: Assuming horizontal scaling capability, sessions are intentionally stateless via JWTs rather than stored in Redis or memory.
+- **Deleted Data Value**: It's assumed transactional history is critical; therefore, "deleting" a record implies a soft-delete (appending a `deleted_at` timestamp) to preserve historical accuracy rather than a hard database `DROP`.
+- **Pre-configured Roles**: Since user-registration was not detailed in the strict requirements, it is assumed initial users and their exact roles (`admin`, `analyst`, `viewer`) are either database seeded or created through a separate internal secure administrative procedure.
+
+---
+
+## Tradeoffs Considered
+
+- **Raw SQL `pg` Driver vs. ORMs (e.g., Prisma, TypeORM)**: 
+  - *Tradeoff*: Chose to write raw parameterized SQL utilizing the `pg` pool. While an ORM would have dramatically accelerated initial development and type-mapping, raw SQL was deliberately selected to guarantee absolute granular control over the complex analytical `GROUP BY` aggregations required by the dashboard service.
+- **Client-Side Framework Integration**: 
+  - *Tradeoff*: The backend serves pure generic JSON rather than implementing a tightly coupled server-side template engine (like EJS or Pug). This cleanly limits concerns, but requires a separate front-end client build to actually visualize the data.
+- **Pagination Strategy**:
+  - *Tradeoff*: Used `OFFSET / LIMIT` pagination. While it is incredibly easy to navigate and implement for simple applications and queries, it could theoretically experience performance drag if scaled to tens of millions of rows compared to cursor-based pagination. Given typical individual financial user datasets, `OFFSET` remains highly optimal, stable, and practical here.
