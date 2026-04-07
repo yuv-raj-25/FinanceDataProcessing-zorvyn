@@ -9,6 +9,8 @@ const router = Router();
 
 // Only admins can create and manage users
 router.post('/', authenticate, requireRole(['admin']), validate(createUserSchema), createUser);
+// router.post('/', validate(createUserSchema), createUser);
+
 router.get('/', authenticate, requireRole(['admin']), getAllUsers);
 router.put('/:id/role', authenticate, requireRole(['admin']), validate(changeRoleSchema), changeRole);
 router.put('/:id/status', authenticate, requireRole(['admin']), validate(changeStatusSchema), changeStatus);
