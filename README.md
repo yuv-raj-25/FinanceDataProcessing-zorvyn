@@ -52,17 +52,36 @@ Input is strictly guarded to prevent malformed data from reaching the database.
 
 ---
 
-## Getting Started
+## Getting Started (Zero to Local Server)
 
-### 1. Launch the Database
-The project utilizes Docker for guaranteed local consistency. Spin up the persistence layer:
+If you have just cloned this repository from GitHub, follow these exact steps to get the application running locally in under two minutes!
+
+### Prerequisites
+- **Node.js**: Standard JavaScript runtime (v18 or higher recommended).
+- **Docker Desktop**: The easiest way to run PostgreSQL without installing database binaries directly into your OS.
+
+### 1. Clone the Repository
+Open your terminal and clone the code:
+```bash
+git clone <your-repository-url>
+cd FinanceDataProcessing-zorvyn
+```
+
+### 2. Install Node Dependencies
+Install all required backend dependencies (Express, Typescript, Zod, pg, etc.):
+```bash
+npm install
+```
+
+### 3. Launch the Postgres Database
+The project utilizes Docker for guaranteed local consistency. Spin up the persistence layer in the background:
 ```bash
 docker-compose up -d
 ```
-*(As defined in `docker-compose.yml`, the database will automatically bind to port `5431`.)*
+*(The database will automatically boot and bind to port `5431` on your machine.)*
 
-### 2. Environment Variables
-Create a `.env` file in the root directory mirroring the necessary connection strings:
+### 4. Provide Environment Variables
+Create a `.env` file in the root directory of the project (at the same level as `package.json`) and paste in these necessary strings to link up to Docker:
 ```env
 PORT=5000
 DB_HOST=localhost
@@ -73,21 +92,48 @@ DB_NAME=finance_db
 JWT_SECRET=super_secret_jwt_finance_key_123
 ```
 
-### 3. Install & Start
-Install Node dependencies and boot the server in dev mode using `tsx`:
+### 5. Start the API Server
+Boot the backend application using `tsx` watch mode:
 ```bash
-npm install
 npm run dev
 ```
 
+---
+
 ### What to Expect on Boot
-Upon startup, the server automatically reads `src/db/migrations/001_initial_schema.sql` and applies the schema to your fresh PostgreSQL instance. Your terminal will display:
+Upon startup, the server automatically reads `src/db/migrations/001_initial_schema.sql` and builds the relational framework in your fresh PostgreSQL instance. Your terminal should display:
 ```
 ⏳ Running database migrations...
   ✅ Applied migration: 001_initial_schema.sql
 ✅ All database migrations applied successfully.
 Server running on port 5000
 ```
+
+### 4. Bootstrapping Your First Admin
+
+Because the application strictly enforces Role-Based Access Control (RBAC), only an `admin` can create other users. To solve this "chicken-and-egg" dilemma and gain access, you can run a quick one-off script to inject the first admin straight into the database.
+
+Run this command from the root of the project:
+```bash
+npx tsx -e "import { UserService } from './src/services/user.service.ts'; UserService.createUser('admin@example.com', 'secure_password', 'admin').then(() => { console.log('Admin seeded!'); process.exit(0) }).catch(console.error);"
+```
+
+Now you can send a `POST` request to `http://localhost:5000/api/auth/login` to receive your JWT:
+```json
+{
+  "email": "admin@example.com",
+  "password": "secure_password"
+}
+```
+
+### 5. Testing the Role-Based Views (RBAC)
+
+To physically verify the role limitations, inject your `admin` token into your HTTP Headers (`Authorization: Bearer <token>`). As an `admin` you have absolute authority over the endpoints. 
+
+You can test the exact boundaries by mapping lower-tier roles:
+1. **Create an Analyst**: Send a `POST` to `/api/users/` (Must be an admin) containing `"role": "analyst"`. Log in with their new credentials. You'll find you can successfully request `/api/dashboard/summary`, but if you try to `DELETE /api/records/:id`, the server fires a `403 Forbidden`.
+2. **Create a Viewer**: Send a `POST` to `/api/users/` containing `"role": "viewer"`. Log in as this viewer. Not only can you not delete records, but if you attempt to view aggregate company data at `GET /api/dashboard/summary`, you will be rejected with a `403 Forbidden`. 
+3. **Revocation**: As an admin, you can test account suspension by firing `PUT /api/users/:id/status` and passing `"status": "inactive"`. Even with a valid token, that user will be instantly blacklisted from the backend!
 
 ---
 
@@ -130,3 +176,78 @@ During the architectural design, a few assumptions were mapped:
   - *Tradeoff*: The backend serves pure generic JSON rather than implementing a tightly coupled server-side template engine (like EJS or Pug). This cleanly limits concerns, but requires a separate front-end client build to actually visualize the data.
 - **Pagination Strategy**:
   - *Tradeoff*: Used `OFFSET / LIMIT` pagination. While it is incredibly easy to navigate and implement for simple applications and queries, it could theoretically experience performance drag if scaled to tens of millions of rows compared to cursor-based pagination. Given typical individual financial user datasets, `OFFSET` remains highly optimal, stable, and practical here.
+
+---
+
+## Comprehensive Postman Usage Guide
+
+This guide walks you through navigating the entire API lifecycle, assuming you are utilizing a REST client like **Postman** or **Insomnia**.
+
+### 1. Bootstrapping & Logging In (Authentication)
+
+Because this API uses strict Role-Based Access Control, you first need to inject an `admin` via the terminal as explained in step 4 in the Getting Started section. Once created:
+
+- **Endpoint**: `POST http://localhost:5000/api/auth/login`
+- **Body (JSON)**:
+  ```json
+  {
+    "email": "admin@example.com",
+    "password": "secure_password_123"
+  }
+  ```
+- **Action**: Hit `Send`. Copy the random `token` string from the JSON response.
+- **Next Steps**: For **every subsequent request below**, go to the **Authorization** tab in Postman, select **Bearer Token**, and paste this token in the box.
+
+### 2. Creating Subordinate Users (RBAC in action)
+
+Only an `admin` can create employees.
+- **Endpoint**: `POST http://localhost:5000/api/users/`
+- **Headers**: Authorization -> Bearer Token (Paste Admin Token)
+- **Body (JSON)**:
+  ```json
+  {
+    "email": "steve@example.com",
+    "password": "steves_password",
+    "role": "analyst" 
+  }
+  ```
+*(Options for role: `admin`, `analyst`, `viewer`)*
+
+### 3. Managing Financial Data (The Records API)
+
+Now let's populate the financial ledger. *Note: Viewers cannot create records.*
+
+**A. Create a Financial Record**
+- **Endpoint**: `POST http://localhost:5000/api/records/`
+- **Body (JSON)**:
+  ```json
+  {
+    "type": "income",
+    "amount": 5500.00,
+    "category": "freelance",
+    "date": "2026-04-07",
+    "description": "Website redesign project"
+  }
+  ```
+  *(Try passing a negative amount or an invalid date, and notice the `422 Unprocessable Entity` Zod validation error!)*
+
+**B. Retrieve Financial Records**
+- **Endpoint**: `GET http://localhost:5000/api/records/`
+- **Query Params**: You can add URL parameters to filter efficiently. Example: `?type=income&page=1&limit=10`
+
+**C. Update / Soft-Delete a Record**
+- Copy an `id` (uuid) from the GET response.
+- **Endpoint**: `DELETE http://localhost:5000/api/records/:id`
+*(If you are logged in as an `analyst` or `viewer`, this destructive action will be blocked by a `403 Forbidden` error.)*
+
+### 4. Viewing the Dashboard (Analytics)
+
+Once you have populated a handful of `income` and `expense` records, you can test the raw SQL aggregation APIs. *(Note: `viewer` roles are restricted from these endpoints).*
+
+**A. Core Summary Metrics**
+- **Endpoint**: `GET http://localhost:5000/api/dashboard/summary`
+- **Returns**: Calculates Net Balance, Total Income, and Total Expense dynamically.
+
+**B. Category Breakdown**
+- **Endpoint**: `GET http://localhost:5000/api/dashboard/category-totals`
+- **Returns**: Groups all your expenses and incomes by category buckets (e.g., how much was spent on "groceries" vs "rent").
