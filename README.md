@@ -109,75 +109,6 @@ Upon startup, the server automatically reads `src/db/migrations/001_initial_sche
 Server running on port 5000
 ```
 
-### 4. Bootstrapping Your First Admin
-
-Because the application strictly enforces Role-Based Access Control (RBAC), only an `admin` can create other users. To solve this "chicken-and-egg" dilemma and gain access, you can run a quick one-off script to inject the first admin straight into the database.
-
-Run this command from the root of the project:
-```bash
-npx tsx -e "import { UserService } from './src/services/user.service.ts'; UserService.createUser('admin@example.com', 'secure_password', 'admin').then(() => { console.log('Admin seeded!'); process.exit(0) }).catch(console.error);"
-```
-
-Now you can send a `POST` request to `http://localhost:5000/api/auth/login` to receive your JWT:
-```json
-{
-  "email": "admin@example.com",
-  "password": "secure_password"
-}
-```
-
-### 5. Testing the Role-Based Views (RBAC)
-
-To physically verify the role limitations, inject your `admin` token into your HTTP Headers (`Authorization: Bearer <token>`). As an `admin` you have absolute authority over the endpoints. 
-
-You can test the exact boundaries by mapping lower-tier roles:
-1. **Create an Analyst**: Send a `POST` to `/api/users/` (Must be an admin) containing `"role": "analyst"`. Log in with their new credentials. You'll find you can successfully request `/api/dashboard/summary`, but if you try to `DELETE /api/records/:id`, the server fires a `403 Forbidden`.
-2. **Create a Viewer**: Send a `POST` to `/api/users/` containing `"role": "viewer"`. Log in as this viewer. Not only can you not delete records, but if you attempt to view aggregate company data at `GET /api/dashboard/summary`, you will be rejected with a `403 Forbidden`. 
-3. **Revocation**: As an admin, you can test account suspension by firing `PUT /api/users/:id/status` and passing `"status": "inactive"`. Even with a valid token, that user will be instantly blacklisted from the backend!
-
----
-
-## API Explanation
-
-Here is a rapid breakdown of the primary endpoints the system exposes:
-
-- **System & Observability**
-  - `GET /health`: Deep database health check returning system connectivity details and latency.
-- **Authentication (`/api/auth`)**
-  - `POST /login`: Accepts email/password and returns a signed JWT.
-- **Records (`/api/records`)**
-  - `GET /`: Retrieve paginated records (Supports queries: `page`, `limit`, `type`, `category`, `search`, `startDate`, `endDate`).
-  - `POST /`: Create a new financial record.
-  - `GET /:id`: Fetch a specific record.
-  - `PUT /:id`: Update an existing record.
-  - `DELETE /:id`: Soft-delete a record.
-- **Dashboard (`/api/dashboard`)**
-  - `GET /summary`: Core metrics (Total Income, Total Expense, Balance).
-  - `GET /category-totals`: Breakdown of expenses/incomes by category.
-  - `GET /recent`: Fetches 5 most recent activities.
-
----
-
-## Assumptions Made
-
-During the architectural design, a few assumptions were mapped:
-- **Currency Storage**: Stored as `DECIMAL(10,2)` in PostgreSQL to guarantee exact mathematical tracking, assuming standard minimal two-decimal fiat precision.
-- **Stateless Authentication**: Assuming horizontal scaling capability, sessions are intentionally stateless via JWTs rather than stored in Redis or memory.
-- **Deleted Data Value**: It's assumed transactional history is critical; therefore, "deleting" a record implies a soft-delete (appending a `deleted_at` timestamp) to preserve historical accuracy rather than a hard database `DROP`.
-- **Pre-configured Roles**: Since user-registration was not detailed in the strict requirements, it is assumed initial users and their exact roles (`admin`, `analyst`, `viewer`) are either database seeded or created through a separate internal secure administrative procedure.
-
----
-
-## Tradeoffs Considered
-
-- **Raw SQL `pg` Driver vs. ORMs (e.g., Prisma, TypeORM)**: 
-  - *Tradeoff*: Chose to write raw parameterized SQL utilizing the `pg` pool. While an ORM would have dramatically accelerated initial development and type-mapping, raw SQL was deliberately selected to guarantee absolute granular control over the complex analytical `GROUP BY` aggregations required by the dashboard service.
-- **Client-Side Framework Integration**: 
-  - *Tradeoff*: The backend serves pure generic JSON rather than implementing a tightly coupled server-side template engine (like EJS or Pug). This cleanly limits concerns, but requires a separate front-end client build to actually visualize the data.
-- **Pagination Strategy**:
-  - *Tradeoff*: Used `OFFSET / LIMIT` pagination. While it is incredibly easy to navigate and implement for simple applications and queries, it could theoretically experience performance drag if scaled to tens of millions of rows compared to cursor-based pagination. Given typical individual financial user datasets, `OFFSET` remains highly optimal, stable, and practical here.
-
----
 
 ## Comprehensive Postman Usage Guide
 
@@ -251,3 +182,75 @@ Once you have populated a handful of `income` and `expense` records, you can tes
 **B. Category Breakdown**
 - **Endpoint**: `GET http://localhost:5000/api/dashboard/category-totals`
 - **Returns**: Groups all your expenses and incomes by category buckets (e.g., how much was spent on "groceries" vs "rent").
+
+
+
+### 4. Bootstrapping Your First Admin
+
+Because the application strictly enforces Role-Based Access Control (RBAC), only an `admin` can create other users. To solve this "chicken-and-egg" dilemma and gain access, you can run a quick one-off script to inject the first admin straight into the database.
+
+Run this command from the root of the project:
+```bash
+npx tsx -e "import { UserService } from './src/services/user.service.ts'; UserService.createUser('admin@example.com', 'secure_password', 'admin').then(() => { console.log('Admin seeded!'); process.exit(0) }).catch(console.error);"
+```
+
+Now you can send a `POST` request to `http://localhost:5000/api/auth/login` to receive your JWT:
+```json
+{
+  "email": "admin@example.com",
+  "password": "secure_password"
+}
+```
+
+### 5. Testing the Role-Based Views (RBAC)
+
+To physically verify the role limitations, inject your `admin` token into your HTTP Headers (`Authorization: Bearer <token>`). As an `admin` you have absolute authority over the endpoints. 
+
+You can test the exact boundaries by mapping lower-tier roles:
+1. **Create an Analyst**: Send a `POST` to `/api/users/` (Must be an admin) containing `"role": "analyst"`. Log in with their new credentials. You'll find you can successfully request `/api/dashboard/summary`, but if you try to `DELETE /api/records/:id`, the server fires a `403 Forbidden`.
+2. **Create a Viewer**: Send a `POST` to `/api/users/` containing `"role": "viewer"`. Log in as this viewer. Not only can you not delete records, but if you attempt to view aggregate company data at `GET /api/dashboard/summary`, you will be rejected with a `403 Forbidden`. 
+3. **Revocation**: As an admin, you can test account suspension by firing `PUT /api/users/:id/status` and passing `"status": "inactive"`. Even with a valid token, that user will be instantly blacklisted from the backend!
+
+---
+
+## API Explanation
+
+Here is a rapid breakdown of the primary endpoints the system exposes:
+
+- **System & Observability**
+  - `GET /health`: Deep database health check returning system connectivity details and latency.
+- **Authentication (`/api/auth`)**
+  - `POST /login`: Accepts email/password and returns a signed JWT.
+- **Records (`/api/records`)**
+  - `GET /`: Retrieve paginated records (Supports queries: `page`, `limit`, `type`, `category`, `search`, `startDate`, `endDate`).
+  - `POST /`: Create a new financial record.
+  - `GET /:id`: Fetch a specific record.
+  - `PUT /:id`: Update an existing record.
+  - `DELETE /:id`: Soft-delete a record.
+- **Dashboard (`/api/dashboard`)**
+  - `GET /summary`: Core metrics (Total Income, Total Expense, Balance).
+  - `GET /category-totals`: Breakdown of expenses/incomes by category.
+  - `GET /recent`: Fetches 5 most recent activities.
+
+---
+
+## Assumptions Made
+
+During the architectural design, a few assumptions were mapped:
+- **Currency Storage**: Stored as `DECIMAL(10,2)` in PostgreSQL to guarantee exact mathematical tracking, assuming standard minimal two-decimal fiat precision.
+- **Stateless Authentication**: Assuming horizontal scaling capability, sessions are intentionally stateless via JWTs rather than stored in Redis or memory.
+- **Deleted Data Value**: It's assumed transactional history is critical; therefore, "deleting" a record implies a soft-delete (appending a `deleted_at` timestamp) to preserve historical accuracy rather than a hard database `DROP`.
+- **Pre-configured Roles**: Since user-registration was not detailed in the strict requirements, it is assumed initial users and their exact roles (`admin`, `analyst`, `viewer`) are either database seeded or created through a separate internal secure administrative procedure.
+
+---
+
+## Tradeoffs Considered
+
+- **Raw SQL `pg` Driver vs. ORMs (e.g., Prisma, TypeORM)**: 
+  - *Tradeoff*: Chose to write raw parameterized SQL utilizing the `pg` pool. While an ORM would have dramatically accelerated initial development and type-mapping, raw SQL was deliberately selected to guarantee absolute granular control over the complex analytical `GROUP BY` aggregations required by the dashboard service.
+- **Client-Side Framework Integration**: 
+  - *Tradeoff*: The backend serves pure generic JSON rather than implementing a tightly coupled server-side template engine (like EJS or Pug). This cleanly limits concerns, but requires a separate front-end client build to actually visualize the data.
+- **Pagination Strategy**:
+  - *Tradeoff*: Used `OFFSET / LIMIT` pagination. While it is incredibly easy to navigate and implement for simple applications and queries, it could theoretically experience performance drag if scaled to tens of millions of rows compared to cursor-based pagination. Given typical individual financial user datasets, `OFFSET` remains highly optimal, stable, and practical here.
+
+---
