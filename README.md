@@ -63,7 +63,7 @@ If you have just cloned this repository from GitHub, follow these exact steps to
 ### 1. Clone the Repository
 Open your terminal and clone the code:
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/yuv-raj-25/FinanceDataProcessing-zorvyn
 cd FinanceDataProcessing-zorvyn
 ```
 
